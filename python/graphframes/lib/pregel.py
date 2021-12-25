@@ -15,13 +15,20 @@
 # limitations under the License.
 #
 
+from typing import Any, Callable, cast, Type, TypeVar, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from graphframes.graphframe import GraphFrame
+    from py4j.java_gateway import JavaObject, JVMView  # type: ignore[import]
+
+
 import sys
 if sys.version > '3':
     basestring = str
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql.functions import col
-from pyspark.ml.wrapper import JavaWrapper, _jvm
+from pyspark.ml.wrapper import JavaWrapper, _jvm  # type: ignore[attr-defined]
 
 
 class Pregel(JavaWrapper):
@@ -76,19 +83,21 @@ class Pregel(JavaWrapper):
     ...     .run()
     """
 
-    def __init__(self, graph):
+    def __init__(self, graph: "GraphFrame"):
         super(Pregel, self).__init__()
         self.graph = graph
-        self._java_obj = self._new_java_obj("org.graphframes.lib.Pregel", graph._jvm_graph)
+        self._java_obj: "JavaObject" = (
+            self._new_java_obj("org.graphframes.lib.Pregel", graph._jvm_graph)  # type: ignore[attr-defined]
+        )
 
-    def setMaxIter(self, value):
+    def setMaxIter(self, value: int) -> "Pregel":
         """
         Sets the max number of iterations (default: 10).
         """
         self._java_obj.setMaxIter(int(value))
         return self
 
-    def setCheckpointInterval(self, value):
+    def setCheckpointInterval(self, value: int) -> "Pregel":
         """
         Sets the number of iterations between two checkpoints (default: 2).
 
@@ -100,7 +109,7 @@ class Pregel(JavaWrapper):
         self._java_obj.setCheckpointInterval(int(value))
         return self
 
-    def withVertexColumn(self, colName, initialExpr, updateAfterAggMsgsExpr):
+    def withVertexColumn(self, colName: str, initialExpr: Column, updateAfterAggMsgsExpr: Column) -> "Pregel":
         """
         Defines an additional vertex column at the start of run and how to update it in each iteration.
 
@@ -118,7 +127,7 @@ class Pregel(JavaWrapper):
         self._java_obj.withVertexColumn(colName, initialExpr._jc, updateAfterAggMsgsExpr._jc)
         return self
 
-    def sendMsgToSrc(self, msgExpr):
+    def sendMsgToSrc(self, msgExpr: Column) -> "Pregel":
         """
         Defines a message to send to the source vertex of each edge triplet.
 
@@ -135,7 +144,7 @@ class Pregel(JavaWrapper):
         self._java_obj.sendMsgToSrc(msgExpr._jc)
         return self
 
-    def sendMsgToDst(self, msgExpr):
+    def sendMsgToDst(self, msgExpr: Column) -> "Pregel":
         """
         Defines a message to send to the destination vertex of each edge triplet.
 
@@ -152,7 +161,7 @@ class Pregel(JavaWrapper):
         self._java_obj.sendMsgToDst(msgExpr._jc)
         return self
 
-    def aggMsgs(self, aggExpr):
+    def aggMsgs(self, aggExpr: Column) -> "Pregel":
         """
         Defines how messages are aggregated after grouped by target vertex IDs.
 
@@ -163,7 +172,7 @@ class Pregel(JavaWrapper):
         self._java_obj.aggMsgs(aggExpr._jc)
         return self
 
-    def run(self):
+    def run(self) -> DataFrame:
         """
         Runs the defined Pregel algorithm.
 
@@ -172,7 +181,7 @@ class Pregel(JavaWrapper):
         return DataFrame(self._java_obj.run(), self.graph.vertices.sql_ctx)
 
     @staticmethod
-    def msg():
+    def msg() -> Column:
         """
         References the message column in aggregating messages and updating additional vertex columns.
 
@@ -181,7 +190,7 @@ class Pregel(JavaWrapper):
         return col("_pregel_msg_")
 
     @staticmethod
-    def src(colName):
+    def src(colName: str) -> Column:
         """
         References a source vertex column in generating messages to send.
 
@@ -192,7 +201,7 @@ class Pregel(JavaWrapper):
         return col("src." + colName)
 
     @staticmethod
-    def dst(colName):
+    def dst(colName: str) -> Column:
         """
         References a destination vertex column in generating messages to send.
 
@@ -203,7 +212,7 @@ class Pregel(JavaWrapper):
         return col("dst." + colName)
 
     @staticmethod
-    def edge(colName):
+    def edge(colName: str) -> Column:
         """
         References an edge column in generating messages to send.
 

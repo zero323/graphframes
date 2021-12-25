@@ -16,6 +16,7 @@
 #
 
 import math
+from typing import Optional
 
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext, functions as sqlfunctions, types
@@ -65,7 +66,7 @@ class BeliefPropagation(object):
      """
 
     @classmethod
-    def runBPwithGraphFrames(cls, g, numIter):
+    def runBPwithGraphFrames(cls, g: GraphFrame, numIter: int) -> GraphFrame:
         """Run Belief Propagation using GraphFrame.
 
         This implementation of BP shows how to use GraphFrame's aggregateMessages method.
@@ -86,11 +87,11 @@ class BeliefPropagation(object):
                 # Send messages to vertices of the current color.
                 # We may send to source or destination since edges are treated as undirected.
                 msgForSrc = sqlfunctions.when(
-                    AM.src['color'] == color,
-                    AM.edge['b'] * AM.dst['belief'])
+                    AM.src['color'] == color,  # type: ignore[index]
+                    AM.edge['b'] * AM.dst['belief'])  # type: ignore[index]
                 msgForDst = sqlfunctions.when(
-                    AM.dst['color'] == color,
-                    AM.edge['b'] * AM.src['belief'])
+                    AM.dst['color'] == color,  # type: ignore[index]
+                    AM.edge['b'] * AM.src['belief'])  # type: ignore[index]
                 # numerically stable sigmoid
                 logistic = sqlfunctions.udf(cls._sigmoid, returnType=types.DoubleType())
                 aggregates = gx.aggregateMessages(
@@ -119,7 +120,7 @@ class BeliefPropagation(object):
         return GraphFrame(gx.vertices.drop('color'), gx.edges)
 
     @staticmethod
-    def _colorGraph(g):
+    def _colorGraph(g: GraphFrame) -> GraphFrame:
         """Given a GraphFrame, choose colors for each vertex.
 
         No neighboring vertices will share the same color. The number of colors is minimized.
@@ -137,7 +138,7 @@ class BeliefPropagation(object):
         return GraphFrame(v, g.edges)
 
     @staticmethod
-    def _sigmoid(x):
+    def _sigmoid(x: Optional[float]) -> Optional[float]:
         """Numerically stable sigmoid function 1 / (1 + exp(-x))"""
         if not x:
             return None
@@ -149,7 +150,7 @@ class BeliefPropagation(object):
             return z / (1 + z)
 
 
-def main():
+def main() -> None:
     """Run the belief propagation algorithm for an example problem."""
     # setup context
     conf = SparkConf().setAppName("BeliefPropagation example")

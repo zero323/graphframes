@@ -15,6 +15,8 @@
 # limitations under the License.
 #
 
+from typing import Any, cast, List, Optional, Tuple, TYPE_CHECKING
+
 import sys
 if sys.version > '3':
     basestring = str
@@ -24,9 +26,13 @@ from pyspark.sql import Column, DataFrame, SQLContext
 from pyspark.storagelevel import StorageLevel
 
 from graphframes.lib import Pregel
+from graphframes._typing import ExpressionOrColumn, AlgorithmType
+
+if TYPE_CHECKING:
+    from py4j.java_gateway import JavaObject, JVMView # type: ignore[import]
 
 
-def _from_java_gf(jgf, sqlContext):
+def _from_java_gf(jgf: "JavaObject", sqlContext: SQLContext) -> "GraphFrame":
     """
     (internal) creates a python GraphFrame wrapper from a java GraphFrame.
 
@@ -36,10 +42,16 @@ def _from_java_gf(jgf, sqlContext):
     pe = DataFrame(jgf.edges(), sqlContext)
     return GraphFrame(pv, pe)
 
-def _java_api(jsc):
+
+def _java_api(jsc: SparkContext) -> "JavaObject":
     javaClassName = "org.graphframes.GraphFramePythonAPI"
-    return jsc._jvm.Thread.currentThread().getContextClassLoader().loadClass(javaClassName) \
-            .newInstance()
+    return (
+        cast("JVMView", jsc._jvm)  # type: ignore[attr-defined]
+        .Thread.currentThread()
+        .getContextClassLoader()
+        .loadClass(javaClassName)
+        .newInstance()
+    )
 
 
 class GraphFrame(object):
@@ -60,17 +72,17 @@ class GraphFrame(object):
     >>> g = GraphFrame(v, e)
     """
 
-    def __init__(self, v, e):
-        self._vertices = v
-        self._edges = e
-        self._sqlContext = v.sql_ctx
-        self._sc = self._sqlContext._sc
+    def __init__(self, v: DataFrame, e: DataFrame):
+        self._vertices: DataFrame = v
+        self._edges: DataFrame = e
+        self._sqlContext: SQLContext = v.sql_ctx
+        self._sc: SparkContext = self._sqlContext._sc  # type: ignore[attr-defined]
         self._jvm_gf_api = _java_api(self._sc)
 
-        self.ID = self._jvm_gf_api.ID()
-        self.SRC = self._jvm_gf_api.SRC()
-        self.DST = self._jvm_gf_api.DST()
-        self._ATTR = self._jvm_gf_api.ATTR()
+        self.ID: str = self._jvm_gf_api.ID()
+        self.SRC: str = self._jvm_gf_api.SRC()
+        self.DST: str = self._jvm_gf_api.DST()
+        self._ATTR: str = self._jvm_gf_api.ATTR()
 
         # Check that provided DataFrames contain required columns
         if self.ID not in v.columns:
@@ -89,7 +101,7 @@ class GraphFrame(object):
         self._jvm_graph = self._jvm_gf_api.createGraph(v._jdf, e._jdf)
 
     @property
-    def vertices(self):
+    def vertices(self) -> DataFrame:
         """
         :class:`DataFrame` holding vertex information, with unique column "id"
         for vertex IDs.
@@ -97,7 +109,7 @@ class GraphFrame(object):
         return self._vertices
 
     @property
-    def edges(self):
+    def edges(self) -> DataFrame:
         """
         :class:`DataFrame` holding edge information, with unique columns "src" and
         "dst" storing source vertex IDs and destination vertex IDs of edges,
@@ -105,25 +117,25 @@ class GraphFrame(object):
         """
         return self._edges
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self._jvm_graph.toString()
 
-    def cache(self):
+    def cache(self) -> "GraphFrame":
         """ Persist the dataframe representation of vertices and edges of the graph with the default
         storage level.
         """
         self._jvm_graph.cache()
         return self
 
-    def persist(self, storageLevel=StorageLevel.MEMORY_ONLY):
+    def persist(self, storageLevel: StorageLevel = StorageLevel.MEMORY_ONLY) -> "GraphFrame":
         """Persist the dataframe representation of vertices and edges of the graph with the given
         storage level.
         """
-        javaStorageLevel = self._sc._getJavaStorageLevel(storageLevel)
+        javaStorageLevel = self._sc._getJavaStorageLevel(storageLevel)  # type: ignore[attr-defined]
         self._jvm_graph.persist(javaStorageLevel)
         return self
 
-    def unpersist(self, blocking=False):
+    def unpersist(self, blocking: bool = False) -> "GraphFrame":
         """Mark the dataframe representation of vertices and edges of the graph as non-persistent,
         and remove all blocks for it from memory and disk.
         """
@@ -131,7 +143,7 @@ class GraphFrame(object):
         return self
 
     @property
-    def outDegrees(self):
+    def outDegrees(self) -> DataFrame:
         """
         The out-degree of each vertex in the graph, returned as a DataFrame with two columns:
          - "id": the ID of the vertex
@@ -145,7 +157,7 @@ class GraphFrame(object):
         return DataFrame(jdf, self._sqlContext)
 
     @property
-    def inDegrees(self):
+    def inDegrees(self) -> DataFrame:
         """
         The in-degree of each vertex in the graph, returned as a DataFame with two columns:
          - "id": the ID of the vertex
@@ -159,7 +171,7 @@ class GraphFrame(object):
         return DataFrame(jdf, self._sqlContext)
 
     @property
-    def degrees(self):
+    def degrees(self) -> DataFrame:
         """
         The degree of each vertex in the graph, returned as a DataFrame with two columns:
          - "id": the ID of the vertex
@@ -173,7 +185,7 @@ class GraphFrame(object):
         return DataFrame(jdf, self._sqlContext)
 
     @property
-    def triplets(self):
+    def triplets(self) -> DataFrame:
         """
         The triplets (source vertex)-[edge]->(destination vertex) for all edges in the graph.
 
@@ -188,7 +200,7 @@ class GraphFrame(object):
         return DataFrame(jdf, self._sqlContext)
 
     @property
-    def pregel(self):
+    def pregel(self) -> Pregel:
         """
         Get the :class:`graphframes.lib.Pregel` object for running pregel.
 
@@ -196,7 +208,7 @@ class GraphFrame(object):
         """
         return Pregel(self)
 
-    def find(self, pattern):
+    def find(self, pattern: str) -> DataFrame:
         """
         Motif finding.
 
@@ -208,12 +220,12 @@ class GraphFrame(object):
         jdf = self._jvm_graph.find(pattern)
         return DataFrame(jdf, self._sqlContext)
 
-    def filterVertices(self, condition):
+    def filterVertices(self, condition: ExpressionOrColumn) -> "GraphFrame":
         """
         Filters the vertices based on expression, remove edges containing any dropped vertices.
-        
+
         :param condition: String or Column describing the condition expression for filtering.
-        :return: GraphFrame with filtered vertices and edges. 
+        :return: GraphFrame with filtered vertices and edges.
         """
 
         if isinstance(condition, basestring):
@@ -224,12 +236,12 @@ class GraphFrame(object):
             raise TypeError("condition should be string or Column")
         return _from_java_gf(jdf, self._sqlContext)
 
-    def filterEdges(self, condition):
+    def filterEdges(self, condition: ExpressionOrColumn) -> "GraphFrame":
         """
         Filters the edges based on expression, keep all vertices.
-        
+
         :param condition: String or Column describing the condition expression for filtering.
-        :return: GraphFrame with filtered edges. 
+        :return: GraphFrame with filtered edges.
         """
         if isinstance(condition, basestring):
             jdf = self._jvm_graph.filterEdges(condition)
@@ -239,16 +251,22 @@ class GraphFrame(object):
             raise TypeError("condition should be string or Column")
         return _from_java_gf(jdf, self._sqlContext)
 
-    def dropIsolatedVertices(self):
+    def dropIsolatedVertices(self) -> "GraphFrame":
         """
         Drops isolated vertices, vertices are not contained in any edges.
 
-        :return: GraphFrame with filtered vertices. 
+        :return: GraphFrame with filtered vertices.
         """
         jdf = self._jvm_graph.dropIsolatedVertices()
         return _from_java_gf(jdf, self._sqlContext)
 
-    def bfs(self, fromExpr, toExpr, edgeFilter=None, maxPathLength=10):
+    def bfs(
+        self,
+        fromExpr: ExpressionOrColumn,
+        toExpr: ExpressionOrColumn,
+        edgeFilter: Optional[ExpressionOrColumn] = None,
+        maxPathLength: int = 10
+    ) -> DataFrame:
         """
         Breadth-first search (BFS).
 
@@ -265,7 +283,12 @@ class GraphFrame(object):
         jdf = builder.run()
         return DataFrame(jdf, self._sqlContext)
 
-    def aggregateMessages(self, aggCol, sendToSrc=None, sendToDst=None):
+    def aggregateMessages(
+        self,
+        aggCol: ExpressionOrColumn,
+        sendToSrc: Optional[ExpressionOrColumn] = None,
+        sendToDst: Optional[ExpressionOrColumn] = None
+    ) -> DataFrame:
         """
         Aggregates messages from the neighbours.
 
@@ -309,8 +332,12 @@ class GraphFrame(object):
 
     # Standard algorithms
 
-    def connectedComponents(self, algorithm = "graphframes", checkpointInterval = 2,
-                            broadcastThreshold = 1000000):
+    def connectedComponents(
+        self,
+        algorithm: AlgorithmType = "graphframes",
+        checkpointInterval: int = 2,
+        broadcastThreshold: int = 1000000
+    ) -> DataFrame:
         """
         Computes the connected components of the graph.
 
@@ -331,7 +358,7 @@ class GraphFrame(object):
             .run()
         return DataFrame(jdf, self._sqlContext)
 
-    def labelPropagation(self, maxIter):
+    def labelPropagation(self, maxIter: int) -> DataFrame:
         """
         Runs static label propagation for detecting communities in networks.
 
@@ -343,8 +370,13 @@ class GraphFrame(object):
         jdf = self._jvm_graph.labelPropagation().maxIter(maxIter).run()
         return DataFrame(jdf, self._sqlContext)
 
-    def pageRank(self, resetProbability = 0.15, sourceId = None, maxIter = None,
-                 tol = None):
+    def pageRank(
+        self,
+        resetProbability: float = 0.15,
+        sourceId: Optional[Any] = None,
+        maxIter: Optional[int] = None,
+        tol: Optional[float] = None
+    ) -> "GraphFrame":
         """
         Runs the PageRank algorithm on the graph.
         Note: Exactly one of fixed_num_iter or tolerance must be set.
@@ -371,8 +403,12 @@ class GraphFrame(object):
         jgf = builder.run()
         return _from_java_gf(jgf, self._sqlContext)
 
-    def parallelPersonalizedPageRank(self, resetProbability = 0.15, sourceIds = None,
-                                     maxIter = None):
+    def parallelPersonalizedPageRank(
+        self,
+        resetProbability: float = 0.15,
+        sourceIds: Optional[List[Any]] = None,
+        maxIter: Optional[int] = None
+    ) -> "GraphFrame":
         """
         Run the personalized PageRank algorithm on the graph,
         from the provided list of sources in parallel for a fixed number of iterations.
@@ -386,7 +422,7 @@ class GraphFrame(object):
         """
         assert sourceIds is not None and len(sourceIds) > 0, "Source vertices Ids sourceIds must be provided"
         assert maxIter is not None, "Max number of iterations maxIter must be provided"
-        sourceIds = self._sc._jvm.PythonUtils.toArray(sourceIds)
+        sourceIds = self._sc._jvm.PythonUtils.toArray(sourceIds)  # type: ignore[attr-defined]
         builder = self._jvm_graph.parallelPersonalizedPageRank()
         builder = builder.resetProbability(resetProbability)
         builder = builder.sourceIds(sourceIds)
@@ -394,7 +430,7 @@ class GraphFrame(object):
         jgf = builder.run()
         return _from_java_gf(jgf, self._sqlContext)
 
-    def shortestPaths(self, landmarks):
+    def shortestPaths(self, landmarks: List[Any]) -> DataFrame:
         """
         Runs the shortest path algorithm from a set of landmark vertices in the graph.
 
@@ -406,7 +442,7 @@ class GraphFrame(object):
         jdf = self._jvm_graph.shortestPaths().landmarks(landmarks).run()
         return DataFrame(jdf, self._sqlContext)
 
-    def stronglyConnectedComponents(self, maxIter):
+    def stronglyConnectedComponents(self, maxIter: int) -> DataFrame:
         """
         Runs the strongly connected components algorithm on this graph.
 
@@ -418,8 +454,17 @@ class GraphFrame(object):
         jdf = self._jvm_graph.stronglyConnectedComponents().maxIter(maxIter).run()
         return DataFrame(jdf, self._sqlContext)
 
-    def svdPlusPlus(self, rank = 10, maxIter = 2, minValue = 0.0, maxValue = 5.0,
-                    gamma1 = 0.007, gamma2 = 0.007, gamma6 = 0.005, gamma7 = 0.015):
+    def svdPlusPlus(
+        self,
+        rank: int = 10,
+        maxIter: int = 2,
+        minValue: float = 0.0,
+        maxValue: float = 5.0,
+        gamma1: float = 0.007,
+        gamma2: float = 0.007,
+        gamma6: float = 0.005,
+        gamma7: float = 0.015
+    ) -> Tuple[DataFrame, float]:
         """
         Runs the SVD++ algorithm.
 
@@ -436,7 +481,7 @@ class GraphFrame(object):
         v = DataFrame(jdf, self._sqlContext)
         return (v, loss)
 
-    def triangleCount(self):
+    def triangleCount(self) -> DataFrame:
         """
         Counts the number of triangles passing through each vertex in this graph.
 
@@ -448,9 +493,9 @@ class GraphFrame(object):
         return DataFrame(jdf, self._sqlContext)
 
 
-def _test():
+def _test() -> None:
     import doctest
-    import graphframe
+    from  graphframes import graphframe
     globs = graphframe.__dict__.copy()
     globs['sc'] = SparkContext('local[4]', 'PythonTest', batchSize=2)
     globs['sqlContext'] = SQLContext(globs['sc'])

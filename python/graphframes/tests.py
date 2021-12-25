@@ -15,6 +15,8 @@
 # limitations under the License.
 #
 
+from typing import Any, ClassVar, Dict, List, Union, TYPE_CHECKING
+
 import sys
 import tempfile
 import shutil
@@ -36,10 +38,16 @@ from .graphframe import GraphFrame, Pregel, _java_api, _from_java_gf
 from .lib import AggregateMessages as AM
 from .examples import Graphs, BeliefPropagation
 
+if TYPE_CHECKING:
+    from graphframes._typing import ExpressionOrColumn
+
+
 class GraphFrameTestUtils(object):
+    sc: ClassVar[SparkContext]
+    spark_version: ClassVar[Dict[str, Union[int, str]]]
 
     @classmethod
-    def parse_spark_version(cls, version_str):
+    def parse_spark_version(cls, version_str: str) -> Dict[str, Union[int, str]]:
         """ take an input version string
             return version items in a dictionary
         """
@@ -47,7 +55,7 @@ class GraphFrameTestUtils(object):
         m = re.match(_sc_ver_patt, version_str)
         if not m:
             raise TypeError("version {} shoud be in <major>.<minor>.<maintenance>".format(version_str))
-        version_info = {}
+        version_info: Dict[str, Union[int, str]] = {}
         try:
             version_info['major'] = int(m.group(1))
         except:
@@ -67,12 +75,12 @@ class GraphFrameTestUtils(object):
         return version_info
 
     @classmethod
-    def register(cls, sc):
+    def register(cls, sc: SparkContext) -> None:
         cls.sc = sc
         cls.spark_version = cls.parse_spark_version(sc.version)
 
     @classmethod
-    def spark_at_least_of_version(cls, version_str):
+    def spark_at_least_of_version(cls, version_str: str) -> bool:
         assert hasattr(cls, 'spark_version')
         required_version = cls.parse_spark_version(version_str)
         spark_version = cls.spark_version
@@ -80,15 +88,18 @@ class GraphFrameTestUtils(object):
             sc_ver = spark_version[_name]
             req_ver = required_version[_name]
             if sc_ver != req_ver:
-                return sc_ver > req_ver
+                return sc_ver > req_ver  # type: ignore[operator]
         # All major.minor.maintenance equal
         return True
 
 
 class GraphFrameTestCase(unittest.TestCase):
+    sc: ClassVar[SparkContext]
+    checkpointDir: ClassVar[str]
+    sql: ClassVar[SQLContext]
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.sc = SparkContext('local[4]', cls.__name__)
         cls.checkpointDir = tempfile.mkdtemp()
         cls.sc.setCheckpointDir(cls.checkpointDir)
@@ -98,15 +109,15 @@ class GraphFrameTestCase(unittest.TestCase):
         GraphFrameTestUtils.register(cls.sc)
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         cls.sc.stop()
-        cls.sc = None
-        cls.sql = None
+        cls.sc = None  # type: ignore[assignment]
+        cls.sql = None  # type: ignore[assignment]
         shutil.rmtree(cls.checkpointDir)
 
 
 class GraphFrameTest(GraphFrameTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super(GraphFrameTest, self).setUp()
         localVertices = [(1, "A"), (2, "B"), (3, "C")]
         localEdges = [(1, 2, "love"), (2, 1, "hate"), (2, 3, "follow")]
@@ -114,7 +125,7 @@ class GraphFrameTest(GraphFrameTestCase):
         e = self.sql.createDataFrame(localEdges, ["src", "dst", "action"])
         self.g = GraphFrame(v, e)
 
-    def test_spark_version_check(self):
+    def test_spark_version_check(self) -> None:
         gtu = GraphFrameTestUtils
         gtu.spark_version = gtu.parse_spark_version("2.0.2")
         self.assertTrue(gtu.spark_at_least_of_version("1.7"))
@@ -124,7 +135,7 @@ class GraphFrameTest(GraphFrameTestCase):
         self.assertFalse(gtu.spark_at_least_of_version("2.0.3"))
         self.assertFalse(gtu.spark_at_least_of_version("2.1"))
 
-    def test_construction(self):
+    def test_construction(self) -> None:
         g = self.g
         vertexIDs = map(lambda x: x[0], g.vertices.select("id").collect())
         assert sorted(vertexIDs) == [1, 2, 3]
@@ -141,12 +152,12 @@ class GraphFrameTest(GraphFrameTestCase):
         with self.assertRaises(ValueError):
             GraphFrame(v_invalid, e_invalid)
 
-    def test_cache(self):
+    def test_cache(self) -> None:
         g = self.g
         g.cache()
         g.unpersist()
 
-    def test_degrees(self):
+    def test_degrees(self) -> None:
         g = self.g
         outDeg = g.outDegrees
         self.assertSetEqual(set(outDeg.columns), {"id", "outDegree"})
@@ -155,15 +166,15 @@ class GraphFrameTest(GraphFrameTestCase):
         deg = g.degrees
         self.assertSetEqual(set(deg.columns), {"id", "degree"})
 
-    def test_motif_finding(self):
+    def test_motif_finding(self) -> None:
         g = self.g
         motifs = g.find("(a)-[e]->(b)")
         assert motifs.count() == 3
         self.assertSetEqual(set(motifs.columns), {"a", "e", "b"})
 
-    def test_filterVertices(self):
+    def test_filterVertices(self) -> None:
         g = self.g
-        conditions = ["id < 3", g.vertices.id < 3]
+        conditions: List["ExpressionOrColumn"] = ["id < 3", g.vertices.id < 3]
         expected_v = [(1, "A"), (2, "B")]
         expected_e = [(1, 2, "love"), (2, 1, "hate")]
         for cond in conditions:
@@ -175,9 +186,9 @@ class GraphFrameTest(GraphFrameTestCase):
             self.assertSetEqual(set(v2), set(expected_v))
             self.assertSetEqual(set(e2), set(expected_e))
 
-    def test_filterEdges(self):
+    def test_filterEdges(self) -> None:
         g = self.g
-        conditions = ["dst > 2", g.edges.dst > 2]
+        conditions: List["ExpressionOrColumn"] = ["dst > 2", g.edges.dst > 2]
         expected_v = [(1, "A"), (2, "B"), (3, "C")]
         expected_e = [(2, 3, "follow")]
         for cond in conditions:
@@ -189,7 +200,7 @@ class GraphFrameTest(GraphFrameTestCase):
             self.assertSetEqual(set(v2), set(expected_v))
             self.assertSetEqual(set(e2), set(expected_e))
 
-    def test_dropIsolatedVertices(self):
+    def test_dropIsolatedVertices(self) -> None:
         g = self.g
         g2 = g.filterEdges("dst > 2").dropIsolatedVertices()
         v2 = g2.vertices.select("id", "name").collect()
@@ -201,7 +212,7 @@ class GraphFrameTest(GraphFrameTestCase):
         self.assertSetEqual(set(v2), set(expected_v))
         self.assertSetEqual(set(e2), set(expected_e))
 
-    def test_bfs(self):
+    def test_bfs(self) -> None:
         g = self.g
         paths = g.bfs("name='A'", "name='C'")
         self.assertEqual(paths.count(), 1)
@@ -213,10 +224,10 @@ class GraphFrameTest(GraphFrameTestCase):
 
 
 class PregelTest(GraphFrameTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super(PregelTest, self).setUp()
 
-    def test_page_rank(self):
+    def test_page_rank(self) -> None:
         from pyspark.sql.functions import coalesce, col, lit, sum, when
         edges = self.sql.createDataFrame([[0, 1],
                                           [1, 2],
@@ -248,19 +259,19 @@ class PregelTest(GraphFrameTestCase):
 
 
 class GraphFrameLibTest(GraphFrameTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super(GraphFrameLibTest, self).setUp()
         self.sqlContext = self.sql
-        self.japi = _java_api(self.sqlContext._sc)
+        self.japi = _java_api(self.sqlContext._sc)  # type: ignore[attr-defined]
 
-    def _hasCols(self, graph, vcols = [], ecols = []):
+    def _hasCols(self, graph: GraphFrame, vcols: List[str] = [], ecols: List[str] = []) -> None:
         map(lambda c: self.assertIn(c, graph.vertices.columns), vcols)
         map(lambda c: self.assertIn(c, graph.edges.columns), ecols)
 
-    def _df_hasCols(self, vertices, vcols = []):
+    def _df_hasCols(self, vertices: DataFrame, vcols: List[str] = []) -> None:
         map(lambda c: self.assertIn(c, vertices.columns), vcols)
 
-    def _graph(self, name, *args):
+    def _graph(self, name: str, *args: Any) -> GraphFrame:
         """
         Convenience to call one of the example graphs, passing the arguments and wrapping the result back
         as a python object.
@@ -272,17 +283,17 @@ class GraphFrameLibTest(GraphFrameTestCase):
         jgraph = getattr(examples, name)(*args)
         return _from_java_gf(jgraph, self.sqlContext)
 
-    def test_aggregate_messages(self):
+    def test_aggregate_messages(self) -> None:
         g = self._graph("friends")
         # For each user, sum the ages of the adjacent users,
         # plus 1 for the src's sum if the edge is "friend".
         sendToSrc = (
-            AM.dst['age'] +
+            AM.dst['age'] +  # type: ignore[index]
             sqlfunctions.when(
-                AM.edge['relationship'] == 'friend',
+                AM.edge['relationship'] == 'friend',  # type: ignore[index]
                 sqlfunctions.lit(1)
             ).otherwise(0))
-        sendToDst = AM.src['age']
+        sendToDst = AM.src['age']  # type: ignore[index]
         agg = g.aggregateMessages(
             sqlfunctions.sum(AM.msg).alias('summedAges'),
             sendToSrc=sendToSrc,
@@ -297,7 +308,7 @@ class GraphFrameLibTest(GraphFrameTestCase):
         agg2Map = {id_: s for id_, s in agg2.select('id', 'summedAges').collect()}
         # Compute the truth via brute force.
         user2age = {id_: age for id_, age in g.vertices.select('id', 'age').collect()}
-        trueAgg = {}
+        trueAgg: Dict[Any, Any] = {}
         for src, dst, rel in g.edges.select("src", "dst", "relationship").collect():
             trueAgg[src] = trueAgg.get(src, 0) + user2age[dst] + (1 if rel == 'friend' else 0)
             trueAgg[dst] = trueAgg.get(dst, 0) + user2age[src]
@@ -308,15 +319,15 @@ class GraphFrameLibTest(GraphFrameTestCase):
         with self.assertRaises(TypeError):
             g.aggregateMessages(
                 "sum(MSG) AS `summedAges`",
-                sendToSrc=object(),
+                sendToSrc=object(),  # type: ignore[arg-type]
                 sendToDst="src['age']")
         with self.assertRaises(TypeError):
             g.aggregateMessages(
                 "sum(MSG) AS `summedAges`",
                 sendToSrc=dst['age'],
-                sendToDst=object())
+                sendToDst=object())  # type: ignore[arg-type]
 
-    def test_connected_components(self):
+    def test_connected_components(self) -> None:
         v = self.sqlContext.createDataFrame([
         (0, "a", "b")], ["id", "vattr", "gender"])
         e = self.sqlContext.createDataFrame([(0, 0, 1)], ["src", "dst", "test"]).filter("src > 10")
@@ -325,7 +336,7 @@ class GraphFrameLibTest(GraphFrameTestCase):
         self._df_hasCols(comps, vcols=['id', 'component', 'vattr', 'gender'])
         self.assertEqual(comps.count(), 1)
 
-    def test_connected_components2(self):
+    def test_connected_components2(self) -> None:
         v = self.sqlContext.createDataFrame([(0, "a0", "b0"), (1, "a1", "b1")], ["id", "A", "B"])
         e = self.sqlContext.createDataFrame([(0, 1, "a01", "b01")], ["src", "dst", "A", "B"])
         g = GraphFrame(v, e)
@@ -333,7 +344,7 @@ class GraphFrameLibTest(GraphFrameTestCase):
         self._df_hasCols(comps, vcols=['id', 'component', 'A', 'B'])
         self.assertEqual(comps.count(), 2)
 
-    def test_connected_components_friends(self):
+    def test_connected_components_friends(self) -> None:
         g = self._graph("friends")
         comps_tests = []
         comps_tests += [g.connectedComponents()]
@@ -344,7 +355,7 @@ class GraphFrameLibTest(GraphFrameTestCase):
         for c in comps_tests:
             self.assertEqual(c.groupBy("component").count().count(), 2)
 
-    def test_label_progagation(self):
+    def test_label_progagation(self) -> None:
         n = 5
         g = self._graph("twoBlobs", n)
         labels = g.labelPropagation(maxIter=4 * n)
@@ -356,7 +367,7 @@ class GraphFrameLibTest(GraphFrameTestCase):
         assert len(all2) == 1
         assert all1 != all2
 
-    def test_page_rank(self):
+    def test_page_rank(self) -> None:
         n = 100
         g = self._graph("star", n)
         resetProb = 0.15
@@ -364,7 +375,7 @@ class GraphFrameLibTest(GraphFrameTestCase):
         pr = g.pageRank(resetProb, tol=errorTol)
         self._hasCols(pr, vcols=['id', 'pagerank'], ecols=['src', 'dst', 'weight'])
 
-    def test_parallel_personalized_page_rank(self):
+    def test_parallel_personalized_page_rank(self) -> None:
         n = 100
         g = self._graph("star", n)
         resetProb = 0.15
@@ -373,22 +384,22 @@ class GraphFrameLibTest(GraphFrameTestCase):
         pr = g.parallelPersonalizedPageRank(resetProb, sourceIds=sourceIds, maxIter=maxIter)
         self._hasCols(pr, vcols=['id', 'pageranks'], ecols=['src', 'dst', 'weight'])
 
-    def test_shortest_paths(self):
+    def test_shortest_paths(self) -> None:
         edges = [(1, 2), (1, 5), (2, 3), (2, 5), (3, 4), (4, 5), (4, 6)]
         all_edges = [z for (a, b) in edges for z in [(a, b), (b, a)]]
-        edges = self.sqlContext.createDataFrame(all_edges, ["src", "dst"])
+        edges = self.sqlContext.createDataFrame(all_edges, ["src", "dst"])  # type: ignore[assignment]
         vertices = self.sqlContext.createDataFrame([(i,) for i in range(1, 7)], ["id"])
-        g = GraphFrame(vertices, edges)
+        g = GraphFrame(vertices, edges)  # type: ignore[arg-type]
         landmarks = [1, 4]
         v2 = g.shortestPaths(landmarks)
         self._df_hasCols(v2, vcols=["id", "distances"])
 
-    def test_svd_plus_plus(self):
+    def test_svd_plus_plus(self) -> None:
         g = self._graph("ALSSyntheticData")
         (v2, cost) = g.svdPlusPlus()
         self._df_hasCols(v2, vcols=['id', 'column1', 'column2', 'column3', 'column4'])
 
-    def test_strongly_connected_components(self):
+    def test_strongly_connected_components(self) -> None:
         # Simple island test
         vertices = self.sqlContext.createDataFrame([(i,) for i in range(1, 6)], ["id"])
         edges = self.sqlContext.createDataFrame([(7, 8)], ["src", "dst"])
@@ -397,7 +408,7 @@ class GraphFrameLibTest(GraphFrameTestCase):
         for row in c.collect():
             self.assertEqual(row.id, row.component)
 
-    def test_triangle_counts(self):
+    def test_triangle_counts(self) -> None:
         edges = self.sqlContext.createDataFrame([(0, 1), (1, 2), (2, 0)], ["src", "dst"])
         vertices = self.sqlContext.createDataFrame([(0,), (1,), (2,)], ["id"])
         g = GraphFrame(vertices, edges)
@@ -407,12 +418,12 @@ class GraphFrameLibTest(GraphFrameTestCase):
 
 
 class GraphFrameExamplesTest(GraphFrameTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super(GraphFrameExamplesTest, self).setUp()
         self.sqlContext = self.sql
-        self.japi = _java_api(self.sqlContext._sc)
+        self.japi = _java_api(self.sqlContext._sc)  # type: ignore[attr-defined]
 
-    def test_belief_propagation(self):
+    def test_belief_propagation(self) -> None:
         # create graphical model g of size 3 x 3
         g = Graphs(self.sqlContext).gridIsingModel(3)
         # run BP for 5 iterations
@@ -425,13 +436,13 @@ class GraphFrameExamplesTest(GraphFrameTestCase):
                 0 <= belief <= 1,
                 msg="Expected belief to be probability in [0,1], but found {}".format(belief))
 
-    def test_graph_friends(self):
+    def test_graph_friends(self) -> None:
         # construct graph
         g = Graphs(self.sqlContext).friends()
         # check that a GraphFrame instance was returned
         self.assertIsInstance(g, GraphFrame)
 
-    def test_graph_grid_ising_model(self):
+    def test_graph_grid_ising_model(self) -> None:
         # construct graph
         n = 3
         g = Graphs(self.sqlContext).gridIsingModel(n)

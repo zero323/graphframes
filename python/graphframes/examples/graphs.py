@@ -17,6 +17,7 @@
 
 import itertools
 
+from pyspark.sql import SQLContext
 from pyspark.sql import functions as sqlfunctions
 
 from graphframes import GraphFrame
@@ -30,11 +31,11 @@ class Graphs(object):
     :param sqlContext: SQLContext
     """
 
-    def __init__(self, sqlContext):
+    def __init__(self, sqlContext: SQLContext):
         self._sql = sqlContext
-        self._sc = sqlContext._sc
+        self._sc = sqlContext._sc  # type: ignore[attr-defined]
 
-    def friends(self):
+    def friends(self) -> GraphFrame:
         """A GraphFrame of friends in a (fake) social network."""
         sqlContext = self._sql
         # Vertex DataFrame
@@ -59,7 +60,7 @@ class Graphs(object):
         # Create a GraphFrame
         return GraphFrame(v, e)
 
-    def gridIsingModel(self, n, vStd=1.0, eStd=1.0):
+    def gridIsingModel(self, n: int, vStd: float = 1.0, eStd: float = 1.0) -> GraphFrame:
         """Grid Ising model with random parameters.
 
         Ising models are probabilistic graphical models over binary variables x\ :sub:`i`.
